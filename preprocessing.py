@@ -62,8 +62,8 @@ def collect_stop_points():
 
 
 def return_stops_in_bounds(df, bounds):
-    min_lat, min_long = bounds['_southWest']['lat'], bounds['_southWest']['lng']
-    max_lat, max_long = bounds['_northEast']['lat'], bounds['_northEast']['lng']
+    min_lat, min_long = bounds[0]
+    max_lat, max_long = bounds[1]
 
     stations_in_frame = df[(df["lon"] < max_long) & (min_long < df["lon"]) & (min_lat < df["lat"]) &(df["lat"] < max_lat)]
     return stations_in_frame

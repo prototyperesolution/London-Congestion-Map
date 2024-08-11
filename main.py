@@ -6,7 +6,7 @@ import preprocessing
 from streamlit_folium import st_folium
 import api_calls
 
-
+crowding_api_key = '9c484d65d3664a708a65bb3954d0450f'
 stops_data = preprocessing.collect_stop_points()
 
 @st.cache_data
@@ -18,43 +18,20 @@ def create_map():
     
     return m
 
-def main():
-    folium_map = create_map()
-    st.title("Live map boundaries in London")
-    col1, col2 = st.columns([3,1])
+def get_curr_map_bounds(map_state):
+    try:
+        return [[map_state['bounds']['_southWest']['lat'],
+            map_state['bounds']['_southWest']['lng']],
+            [map_state['bounds']['_northEast']['lat'],
+            map_state['bounds']['_northEast']['lng']]]
+    except:
+        return None
 
-    with col2:
-        if 'map_bounds' not in st.session_state:
-            st.session_state['map_bounds'] = None
+folium_map = create_map()
 
-        # Add a button to capture and display the map bounds
-        if st.button("Show crowding heatmap"):
-            #try:
-            if st.session_state['map_bounds']:
-                bounds = st.session_state['map_bounds']
-                curr_stations = preprocessing.return_stops_in_bounds(stops_data, bounds)
-                curr_stations = curr_stations.drop_duplicates(subset='commonName', keep='first')
-                #50 is an API call limit
-                for i in range(0,min(50, len(curr_stations))):
-                    curr_crowding = api_calls.fetch_crowding_data(curr_stations.iloc[i,curr_stations.columns.get_loc('naptanId')])
-                    st.write(curr_crowding)
-                    curr_stations.iloc[i, curr_stations.columns.get_loc('crowdData')] = curr_crowding['percentageOfBaseline']*100
-                heat_df = curr_stations.loc[:50,['lat','lon','crowdData']]
-                st.write(heat_df)
-                st.session_state['heat_data'] = heat_df
-
-            else:
-                st.write("Click the button to show the current map bounds.")
-            #except:
-            #    st.write('Unable to fetch data. Possibly too many API requests \n please wait 1 minute before trying again')                        
-
-    with col1:
-        if 'map' not in st.session_state:
-            st.session_state['map'] = folium_map
-        else:
-            folium_map = st.session_state['map']
-
-        for index, stop in stops_data.iterrows():
+@st.cache_data
+def place_stations(_map, stops_data):
+    for index, stop in stops_data.iterrows():
             popup_html = f"""<div style="text-align: center;">
                     <div style="font-family: 'Courier New', Courier, monospace; color: blue; font-size: 10px;">
                         {stop['commonName']}
@@ -65,14 +42,38 @@ def main():
                 """
             folium.Marker(location = [stop['lat'], stop['lon']],
                               popup = folium.Popup(popup_html, max_width=200),
-                              icon = folium.DivIcon(html=square_html)).add_to(folium_map)
-        
-        if 'heat_data' in st.session_state:
-            HeatMap(st.session_state['heat_data'], radius = 20).add_to(folium_map)
-        map_state = st_folium(folium_map, width=450, height=450)
-        st.session_state['map'] = folium_map
-        st.session_state['map_bounds'] = map_state['bounds']
+                              icon = folium.DivIcon(html=square_html)).add_to(_map)
 
+
+@st.cache_data
+def place_heatmap(_map, stops_data):
+    for i in range(0,len(stops_data)):
+                    curr_crowding = api_calls.fetch_crowding_data(stops_data.iloc[i,stops_data.columns.get_loc('naptanId')], crowding_api_key)
+                    try:
+                        stops_data.iloc[i, stops_data.columns.get_loc('crowdData')] = curr_crowding['percentageOfBaseline'].astype('int64')*100
+                    except:
+                        stops_data.iloc[i, stops_data.columns.get_loc('crowdData')] = 0
+    heat_df = stops_data[['lat','lon','crowdData']]
+    HeatMap(heat_df, 
+                    min_opacity=0.4,
+                    blur = 18
+                        ).add_to(folium.FeatureGroup(name='Heat Map').add_to(_map))
+    folium.LayerControl().add_to(_map)
+            
+def main():
+    st.title("Live map boundaries in London")
+    col1, col2 = st.columns([3,1])
+
+    with col2:
+        pass
+    with col1:
+        try:
+            place_stations(folium_map,stops_data)
+            place_heatmap(folium_map,stops_data)
+        except:
+             st.write('too many API requests, wait a minute')
+        map_state = st_folium(folium_map, width=450, height=450)
+        
     
 if __name__ == "__main__":
     main()
