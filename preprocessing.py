@@ -1,7 +1,12 @@
 import requests
 import pandas as pd
 import streamlit as st
-# Function to send GET requests for each tube line and collect the data
+from api_calls import fetch_crowding_data
+import numpy as np
+
+
+crowding_api_key = '9c484d65d3664a708a65bb3954d0450f'
+
 @st.cache_data
 def collect_stop_points():
 
@@ -57,8 +62,14 @@ def collect_stop_points():
                 })
         else:
             print(f"Failed to retrieve data for {line.capitalize()} line. Status code: {response.status_code}")
-        
-    return pd.DataFrame(all_stop_points)
+    all_stop_points = pd.DataFrame(all_stop_points).drop_duplicates(subset = 'commonName')
+    for i in range(0,len(all_stop_points)):
+        crowding_data = fetch_crowding_data(all_stop_points.iloc[i,1], crowding_api_key)
+        try:
+            all_stop_points.iloc[i, 8] = crowding_data['percentageOfBaseline']
+        except:
+            all_stop_points.iloc[i, 8] = 0
+    return all_stop_points
 
 
 def return_stops_in_bounds(df, bounds):
